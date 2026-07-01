@@ -1,6 +1,6 @@
 # ClownpieceTorch-2026
 
-**Teaching Assistants:** cyl06
+**Teaching Assistant:** cyl06
 
 ## Preface
 
@@ -92,9 +92,9 @@ We appreciate contributions from students with CUDA experience to include an opt
 
 ---
 
-## Acknowledgement
+## Acknowledgements
 
-This project is developed by Teaching Assistants fAKe and MasterFHC (SJTU John Class 2023).
+This project is developed by Teaching Assistants [fAKe](https://github.com/fAKe2004) and [MasterFHC](https://github.com/MasterFHC) (SJTU John Class 2023).
 
 ---
 
