@@ -61,6 +61,8 @@ class Tensor {
   stride_t stride_;
   int offset_;
   Storage storage_;
+  int numel_;
+  bool is_contiguous_;
 
  private:
   /*
@@ -109,6 +111,7 @@ class Tensor {
   const stride_t& get_stride() const { return stride_; }            // for graderlib
   int get_offset() const { return offset_; }                        // for graderlib
   const Storage& get_storage() const { return storage_; }                        // for graderlib
+  const int offset_at(int n) const; //return the physical idx of the n-th element
   /*
     clone, make contiguous and copy_from
   */
@@ -132,6 +135,8 @@ class Tensor {
   /*
     operators  
   */
+  void apply_unary_functions(Tensor& tensor, std::function<dtype(dtype)> func) const;
+
   Tensor operator-() const;
 
   friend Tensor operator+(const Tensor& lhs, const Tensor& rhs);
