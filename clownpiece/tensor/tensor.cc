@@ -623,26 +623,143 @@ namespace at {
   }
 
   Tensor Tensor::narrow(int dim, int start, int length, bool copy) const {
-    throw std::runtime_error("Unimplemented");
+    int d = this->dim();
+    if (dim < 0) {dim = d + dim;}
+    if (dim < 0 || dim >= d) {throw std::runtime_error("Narrow: invalid dimension");}
+    if (length < 0 || start < 0 || 
+      start > shape_[dim] || start + length > shape_[dim]) {throw std::runtime_error("Narrow: invalid slicing");}
+    vec<slice_t> slices(d);
+    for (int i = 0; i < d; ++i) {
+      if (i == dim) {
+        slices[i] = {start, start + length};
+        continue;
+      }
+      slices[i] = {0, shape_[i]};
+    }
+    Tensor tmp = (*this)[slices];
+    if (copy) {return tmp.clone();}
+    return tmp;
   }
 
   vec<Tensor> Tensor::chunk(int chunks, int dim) const {
-    throw std::runtime_error("Unimplemented");
+    int d = this->dim();
+    if (dim < 0) dim += d;
+    if (dim < 0 || dim >= d) throw std::runtime_error("Chunk: invalid dimension");
+    if (chunks <= 0) throw std::runtime_error("Chunk: chunks must be positive");
+    int n = shape_[dim];
+    int chunk_size = (n + chunks - 1) / chunks;
+    vec<Tensor> ret;
+    for (int start = 0; start < n; start += chunk_size) {
+      int len = std::min(chunk_size, n - start);
+      ret.push_back(narrow(dim, start, len, false));
+    }
+    return ret;
   }
 
   vec<Tensor> Tensor::split(int dim, int split_size) const {
-    throw std::runtime_error("Unimplemented");
+    int d = this->dim();
+    if (dim < 0) {dim = d + dim;}
+    if (dim < 0 || dim >= d) {throw std::runtime_error("Split: invalid dimension");}
+    if (split_size <= 0) {throw std::runtime_error("Split: invalid split");}
+    vec<Tensor> ret;
+    for (int i = 0; i < shape_[dim]; i += split_size) {
+      int len = std::min(split_size, shape_[dim] - i);
+      ret.push_back(narrow(dim, i, len, false));
+    }
+    return ret;
   }
   vec<Tensor> Tensor::split(int dim, veci split_sections) const {
-    throw std::runtime_error("Unimplemented");
+    int d = this->dim();
+    int sz = split_sections.size();
+    if (dim < 0) {dim = d + dim;}
+    if (dim < 0 || dim >= d) {throw std::runtime_error("Split: invalid dimension");}
+    veci prefix(sz + 1, 0);
+    for (int i = 1; i < sz + 1; ++i) {
+      prefix[i] = split_sections[i - 1] + prefix[i - 1];
+    }
+    if (prefix.back() != shape_[dim]) {
+      throw std::runtime_error("Split: invalid split");
+    }
+    vec<Tensor> ret;
+    for (int i = 0; i < sz; ++i) {
+      ret.push_back(narrow(dim, prefix[i], split_sections[i], false));
+    }
+    return ret;
   }
 
   Tensor Tensor::stack(const vec<Tensor>& inputs, int dim) {
-    throw std::runtime_error("Unimplemented");
+    if (inputs.empty()) {throw std::runtime_error("Stack: no input");}
+    Tensor t = inputs[0];
+    veci ori_shape = t.get_shape();
+    for (auto v : inputs) {
+      if (v.dim() != t.dim()) {throw std::runtime_error("Stack: dimension unmatch");}
+      if (v.get_shape() != ori_shape) {throw std::runtime_error("Stack: shape unmatch");}
+    }
+    if (dim < 0) {dim = t.dim() + dim + 1;}
+    if (dim < 0 || dim > t.dim()) {throw std::runtime_error("Stack: invalid dimension");}
+    veci shape(t.dim() + 1);
+    for (int i = 0; i < dim; ++i) {
+      shape[i] = ori_shape[i];
+    }
+    shape[dim] = inputs.size();
+    for (int i = dim + 1; i < shape.size(); ++i) {
+      shape[i] = ori_shape[i - 1];
+    }
+    int num = t.numel();
+    int d = t.dim();
+    Tensor ret = Tensor(shape);
+    for(int i = 0; i < inputs.size(); ++i) {
+      auto& v = inputs[i];
+      for (int j = 0; j < num; ++j) {
+        int offset = i * ret.stride_[dim];;
+        int tmp = j;
+        for (int k = d - 1; k >= 0; --k) {
+          int idx = tmp % v.shape_[k];
+          tmp /= v.shape_[k];
+          offset += (k >= dim ? idx * ret.stride_[k + 1] : idx * ret.stride_[k]);
+        }
+        ret.storage_[offset] = v.storage_[v.offset_at(j)];
+      }
+    }
+    return ret;
   }
 
   Tensor Tensor::cat(const vec<Tensor>& inputs, int dim) {
-    throw std::runtime_error("Unimplemented");
+    if (inputs.empty()) {throw std::runtime_error("Cat: no input");}
+    Tensor t = inputs[0];
+    veci ori_shape = t.get_shape();
+    int sum = 0;
+    if (dim < 0) {dim = t.dim() + dim;}
+    if (dim < 0 || dim >= t.dim()) {throw std::runtime_error("Cat: invalid dimension");}
+    for (auto v : inputs) {
+      if (v.dim() != t.dim()) {throw std::runtime_error("Cat: dimension unmatch");}
+      veci s1 = v.get_shape();
+      for (int i = 0; i < ori_shape.size(); ++i) {
+        if (s1[i] != ori_shape[i] && i != dim) {throw std::runtime_error("Cat: dimension unmatch");}
+        if (i == dim) {sum += s1[i];}
+      }
+    }
+    veci shape(ori_shape);
+    shape[dim] = sum;
+    int d = t.dim();
+    Tensor ret = Tensor(shape);
+    int dim_offset = 0;
+    for(int i = 0; i < inputs.size(); ++i) {
+      auto& v = inputs[i];
+      int num = v.numel();
+      for (int j = 0; j < num; ++j) {
+        int offset = 0;
+        int tmp = j;
+        for (int k = d - 1; k >= 0; --k) {
+          int idx = tmp % v.shape_[k];
+          tmp /= v.shape_[k];
+          offset += (k != dim ? idx * ret.stride_[k] : (idx + dim_offset) * ret.stride_[k]);
+        }
+        ret.storage_[offset] = v.storage_[v.offset_at(j)];
+      }
+      dim_offset += v.shape_[dim];
+    }
+    return ret;
   }
 
   Tensor Tensor::squeeze(int dim) const {
@@ -663,7 +780,7 @@ namespace at {
 
   Tensor Tensor::unsqueeze(int dim) const {
     int d = this->dim();
-    if (dim < 0) {dim += d;}
+    if (dim < 0) {dim += d + 1;}
     if (dim < 0 || dim > d){throw std::runtime_error("Unsqueeze: invalid dimension");}
     shape_t shape(d + 1);
     stride_t stride(d + 1);
@@ -671,7 +788,8 @@ namespace at {
       shape[i] = shape_[i];
       stride[i] = stride_[i];
     }
-    shape[dim] = stride[dim] = 1;
+    shape[dim] = 1;
+    stride[dim] = (dim == d ? 1 : stride_[dim] * shape_[dim]);
     for (int i = dim; i < d; ++i) {
       shape[i + 1] = shape_[i];
       stride[i + 1] = stride_[i];
@@ -680,14 +798,101 @@ namespace at {
   }
 
   Tensor Tensor::broadcast_to(const shape_t& shape) const {
-    throw std::runtime_error("Unimplemented");
+    if (shape_.empty() && numel_ == 0) {
+      throw std::runtime_error("Broadcast_to: tensor has no data");
+    }
+    veci ret_shape(shape.size(), 1);
+    veci ret_stride(shape.size(), 0);
+    if (shape_.size() > shape.size()) {throw std::runtime_error("Broadcast_to: invalid shape");}
+    int s = std::max(static_cast<int>(shape.size() - shape_.size()), 0);
+    int sz = ret_shape.size();
+    for (int i = s; i < sz; ++i) {
+      ret_shape[i] = shape_[i - s];
+      ret_stride[i] = stride_[i - s];
+    }
+    for (int i = sz - 1; i >= 0; --i) {
+      if (ret_shape[i] == shape[i]) {continue;}
+      if (ret_shape[i] > shape[i]) {throw std::runtime_error("Broadcast_to: invalid shape");}
+      if (ret_shape[i] != 1) {throw std::runtime_error("Broadcast_to: invalid shape");}
+      ret_shape[i] = shape[i];
+      ret_stride[i] = 0;
+    }
+    return Tensor(ret_shape, ret_stride, offset_, storage_);
   }
 
   std::pair<Tensor, Tensor> Tensor::broadcast(const Tensor& lhs, const Tensor& rhs) {
-    throw std::runtime_error("Unimplemented");
+    int sz = std::max(lhs.shape_.size(),rhs.shape_.size());
+    if (lhs.shape_.empty() && lhs.numel_ == 0) {
+      throw std::runtime_error("Broadcast_to: tensor has no data");
+    }
+    if (rhs.shape_.empty() && rhs.numel_ == 0) {
+      throw std::runtime_error("Broadcast_to: tensor has no data");
+    }
+    veci l_shape(sz, 1);
+    veci l_stride(sz, 0);
+    veci r_shape(sz, 1);
+    veci r_stride(sz, 0);
+    for (int i = (sz - lhs.shape_.size()); i < sz; ++i) {
+      l_shape[i] = lhs.shape_[i - (sz - lhs.shape_.size())];
+      l_stride[i] = lhs.stride_[i - (sz - lhs.shape_.size())];
+    }
+    for (int i = (sz - rhs.shape_.size()); i < sz; ++i) {
+      r_shape[i] = rhs.shape_[i - (sz - rhs.shape_.size())];
+      r_stride[i] = rhs.stride_[i - (sz - rhs.shape_.size())];
+    }
+    for (int i = sz - 1; i >= 0; --i) {
+      if (l_shape[i] == r_shape[i]) {continue;}
+      if (l_shape[i] != r_shape[i]) {
+        if (l_shape[i] == 1 && l_shape[i] < r_shape[i]) {
+          l_shape[i] = r_shape[i];
+          l_stride[i] = 0;
+        } else if (r_shape[i] == 1 && r_shape[i] < l_shape[i]) {
+          r_shape[i] = l_shape[i];
+          r_stride[i] = 0;
+        } else {
+          throw std::runtime_error("Broadcast: invalid shape");
+        }
+      }
+    }
+    return {Tensor(l_shape, l_stride, lhs.offset_, lhs.storage_),
+       Tensor(r_shape, r_stride, rhs.offset_, rhs.storage_)};
   }
   vec<Tensor> Tensor::broadcast(const vec<Tensor>& tensors) {
-    throw std::runtime_error("Unimplemented");
+    if (tensors.empty()) {
+      throw std::runtime_error("Broadcast: no input");
+    }
+    int max_dim = 0;
+    for (const auto& t : tensors) {
+      if (t.shape_.empty() && t.numel_ == 0) {
+        throw std::runtime_error("Broadcast: tensor has no data");
+      }
+      max_dim = std::max(max_dim, t.dim());
+    }
+    shape_t common_shape(max_dim, 1);
+    for (const auto& t : tensors) {
+      int pad = max_dim - t.dim();
+      for (int i = 0; i < t.dim(); ++i) {
+        int axis = pad + i;
+        int old_size = t.shape_[i];
+        int cur_size = common_shape[axis];
+        if (cur_size == old_size) {
+          continue;
+        }
+        if (cur_size == 1) {
+          common_shape[axis] = old_size;
+        } else if (old_size == 1) {
+          continue;
+        } else {
+          throw std::runtime_error("Broadcast: invalid shape");
+        }
+      }
+    }
+    vec<Tensor> ret;
+    ret.reserve(tensors.size());
+    for (const auto& t : tensors) {
+      ret.push_back(t.broadcast_to(common_shape));
+    }
+    return ret;
   }
 
 
