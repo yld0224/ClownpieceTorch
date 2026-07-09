@@ -226,6 +226,14 @@ namespace at {
     }
     return physical_idx;
   }
+  const int Tensor::offset_atv(veci v) const {
+    int physical_idx = offset_;
+    int sz = v.size();
+    for (int i = 0; i < sz; ++i) {
+      physical_idx += v[i] * stride_[i];
+    }
+    return physical_idx;
+  }
 
 
   /*
@@ -372,141 +380,317 @@ namespace at {
   /*
     operators
   */
-  void Tensor::apply_unary_functions(Tensor& tensor, std::function<dtype(dtype)> func) const {
+  void Tensor::apply_unary_functions(Tensor& tensor, std::function<dtype(dtype)> func) {
     int num = tensor.numel();
     for (int i = 0; i < num; ++i) {
       tensor.data_at(i) = func(tensor.data_at(i));
     }
   }
 
+  Tensor Tensor::apply_binary_functions(const Tensor& t1, const Tensor& t2, std::function<dtype(dtype, dtype)> func) {
+    Tensor ret = Tensor(t1.shape_);
+    int num = t1.numel();
+    for (int i = 0; i < num; ++i) {
+      ret.data_at(i) = func(t1.data_at(i), t2.data_at(i));
+    }
+    return ret;
+  }
+
   Tensor Tensor::operator-() const {
     Tensor ret = clone();
-    apply_unary_functions(ret, [](dtype data) -> dtype{return -data;});
+    Tensor::apply_unary_functions(ret, [](dtype data) -> dtype{return -data;});
     return ret;
   }
 
   Tensor operator+(const Tensor& lhs, const Tensor& rhs) {
-    throw std::runtime_error("Unimplemented");
+    std::pair<Tensor, Tensor> p = Tensor::broadcast(lhs, rhs);
+    return Tensor::apply_binary_functions(p.first, p.second, [](dtype a, dtype b)->dtype{return a + b;});
   }
   
   Tensor operator-(const Tensor& lhs, const Tensor& rhs) {
-    throw std::runtime_error("Unimplemented");
+    std::pair<Tensor, Tensor> p = Tensor::broadcast(lhs, rhs);
+    return Tensor::apply_binary_functions(p.first, p.second, [](dtype a, dtype b)->dtype{return a - b;});
   }
 
   Tensor operator*(const Tensor& lhs, const Tensor& rhs) {
-    throw std::runtime_error("Unimplemented");
+    std::pair<Tensor, Tensor> p = Tensor::broadcast(lhs, rhs);
+    return Tensor::apply_binary_functions(p.first, p.second, [](dtype a, dtype b)->dtype{return a * b;});
   }
 
   Tensor operator/(const Tensor& lhs, const Tensor& rhs) {
-    throw std::runtime_error("Unimplemented");
+    std::pair<Tensor, Tensor> p = Tensor::broadcast(lhs, rhs);
+    return Tensor::apply_binary_functions(p.first, p.second, [](dtype a, dtype b)->dtype{return a / b;});
   }
   
   Tensor operator==(const Tensor& lhs, const Tensor& rhs) {
-    throw std::runtime_error("Unimplemented");
+    std::pair<Tensor, Tensor> p = Tensor::broadcast(lhs, rhs);
+    return Tensor::apply_binary_functions(p.first, p.second, [](dtype a, dtype b)->dtype{return a == b ? 1.0f : 0.0f;});
   }
 
   Tensor operator!=(const Tensor& lhs, const Tensor& rhs) {
-    throw std::runtime_error("Unimplemented");
+    std::pair<Tensor, Tensor> p = Tensor::broadcast(lhs, rhs);
+    return Tensor::apply_binary_functions(p.first, p.second, [](dtype a, dtype b)->dtype{return a != b ? 1.0f : 0.0f;});
   }
   Tensor operator<(const Tensor& lhs, const Tensor& rhs) {
-    throw std::runtime_error("Unimplemented");
+     std::pair<Tensor, Tensor> p = Tensor::broadcast(lhs, rhs);
+    return Tensor::apply_binary_functions(p.first, p.second, [](dtype a, dtype b)->dtype{return a < b ? 1.0f : 0.0f;});
   }
 
   Tensor operator<=(const Tensor& lhs, const Tensor& rhs) {
-    throw std::runtime_error("Unimplemented");
+     std::pair<Tensor, Tensor> p = Tensor::broadcast(lhs, rhs);
+    return Tensor::apply_binary_functions(p.first, p.second, [](dtype a, dtype b)->dtype{return a <= b ? 1.0f : 0.0f;});
   }
 
   Tensor operator>=(const Tensor& lhs, const Tensor& rhs) {
-    throw std::runtime_error("Unimplemented");
+     std::pair<Tensor, Tensor> p = Tensor::broadcast(lhs, rhs);
+    return Tensor::apply_binary_functions(p.first, p.second, [](dtype a, dtype b)->dtype{return a >= b ? 1.0f : 0.0f;});
   }
 
   Tensor operator>(const Tensor& lhs, const Tensor& rhs) {
-    throw std::runtime_error("Unimplemented");
+     std::pair<Tensor, Tensor> p = Tensor::broadcast(lhs, rhs);
+    return Tensor::apply_binary_functions(p.first, p.second, [](dtype a, dtype b)->dtype{return a > b ? 1.0f : 0.0f;});
   }
 
   /*
     matrix multiplication
   */
   Tensor matmul(const Tensor& lhs, const Tensor& rhs) {
-    throw std::runtime_error("Unimplemented");
+    if (lhs.dim() == 0 || rhs.dim() == 0) {
+      throw std::runtime_error("Matmul: invalid scalar inputs");
+    }
+    if (lhs.dim() == 1 && rhs.dim() == 1) {
+      if (lhs.shape_[0] != rhs.shape_[0]) {throw std::runtime_error("Matmul: invalid shape");}
+      int sz = lhs.shape_[0];
+      dtype ret = 0;
+      for (int i = 0; i < sz; ++i) {
+        ret += lhs.get_data_at(i) * rhs.get_data_at(i);
+      }
+      return Tensor(ret);
+    }
+    Tensor l = lhs;
+    Tensor r = rhs;
+    if (lhs.dim() == 1 && rhs.dim() >= 2) {
+      l = lhs.unsqueeze(0);
+      return matmul(l, r).squeeze(r.dim() - 2);
+    }
+    if (rhs.dim() == 1 && lhs.dim() >= 2) {
+      r = rhs.unsqueeze(1);
+      return matmul(l, r).squeeze(l.dim() - 1);
+    }
+    if (r.shape_[r.dim() - 2] != l.shape_[l.dim() - 1]) {throw std::runtime_error("Matmul: invalid shape");}
+    std::pair<Tensor, Tensor> p = Tensor::broadcast_for_matmul(l, r);
+    Tensor l1 = p.first;
+    Tensor r1 = p.second;
+    shape_t ret_shape = r1.shape_;
+    int d1 = l1.dim() - 1;
+    int d2 = r1.dim() - 2;
+    ret_shape[d2] = l.shape_[d2];
+    Tensor ret = Tensor(ret_shape);
+    int num = ret.numel();
+    for (int i = 0; i < num; ++i) {
+      int tmp = i;
+      veci coord(ret_shape.size());
+      for (int j = ret_shape.size() - 1; j >= 0; --j) {
+        int idx = tmp % ret_shape[j];
+        tmp /= ret_shape[j];
+        coord[j] = idx;
+      }
+      veci coord_l1 = coord;
+      veci coord_r1 = coord;
+      dtype n = 0;
+      for (int j = 0; j < l1.shape_[d1]; ++j) {
+        coord_l1[d1] = j;
+        coord_r1[d2] = j;
+        n += l1.storage_[l1.offset_atv(coord_l1)] * r1.storage_[r1.offset_atv(coord_r1)];
+      }
+      ret.storage_[ret.offset_atv(coord)] = n;
+    }
+    return ret;
+  }
+
+  std::pair<Tensor, Tensor> Tensor::broadcast_for_matmul(const Tensor& lhs, const Tensor& rhs) {
+    int lb = lhs.dim() - 2;
+    int rb = rhs.dim() - 2;
+    int bd = std::max(lb, rb);
+    shape_t batch_shape(bd, 1);
+    auto merge_batch = [&](const Tensor& t) {
+      int tb = t.dim() - 2;
+      int pad = bd - tb;
+      for (int i = 0; i < tb; ++i) {
+        int axis = pad + i;
+        int old_size = t.size(i);
+        int cur_size = batch_shape[axis];
+        if (cur_size == old_size) continue;
+        if (cur_size == 1) batch_shape[axis] = old_size;
+        else if (old_size == 1) continue;
+        else throw std::runtime_error("Matmul: batch dimensions cannot broadcast");
+      }
+    };
+    merge_batch(lhs);
+    merge_batch(rhs);
+    shape_t l_shape = batch_shape;
+    l_shape.push_back(lhs.size(lhs.dim() - 2));
+    l_shape.push_back(lhs.size(lhs.dim() - 1));
+    shape_t r_shape = batch_shape;
+    r_shape.push_back(rhs.size(rhs.dim() - 2));
+    r_shape.push_back(rhs.size(rhs.dim() - 1));
+    return {lhs.broadcast_to(l_shape), rhs.broadcast_to(r_shape)};
   }
 
   Tensor operator^(const Tensor& lhs, const Tensor& rhs) {
-    throw std::runtime_error("Unimplemented");
+    return matmul(lhs, rhs);
   }
 
   /*
     other mathematical operations
   */
   Tensor Tensor::sign() const {
-    throw std::runtime_error("Unimplemented");
+    Tensor ret = clone();
+    Tensor::apply_unary_functions(ret, [](dtype data) -> dtype{
+      if (data > 0) {return 1;}
+      if (data == 0) {return 0;}
+      return -1;
+    });
+    return ret;
   }
 
   Tensor Tensor::abs() const {
-    throw std::runtime_error("Unimplemented");
+    Tensor ret = clone();
+    Tensor::apply_unary_functions(ret, [](dtype data) -> dtype{
+      return data >= 0 ? data : -data;
+    });
+    return ret;
   }
   Tensor abs(const Tensor& tensor) {
-    throw std::runtime_error("Unimplemented");
+    Tensor ret = tensor.clone();
+    Tensor::apply_unary_functions(ret, [](dtype data) -> dtype{
+      return data >= 0 ? data : -data;
+    });
+    return ret;
   }
 
   Tensor Tensor::sin() const {
-    throw std::runtime_error("Unimplemented");
+    Tensor ret = clone();
+    Tensor::apply_unary_functions(ret, [](dtype data) -> dtype{
+      return std::sin(data);
+    });
+    return ret;
   }
   Tensor sin(const Tensor& tensor) {
-    throw std::runtime_error("Unimplemented");
+    Tensor ret = tensor.clone();
+    Tensor::apply_unary_functions(ret, [](dtype data) -> dtype{
+      return std::sin(data);
+    });
+    return ret;
   }
 
   Tensor Tensor::cos() const {
-    throw std::runtime_error("Unimplemented");
+    Tensor ret = clone();
+    Tensor::apply_unary_functions(ret, [](dtype data) -> dtype{
+      return std::cos(data);
+    });
+    return ret;
   }
   Tensor cos(const Tensor& tensor) {
-    throw std::runtime_error("Unimplemented");
+     Tensor ret = tensor.clone();
+    Tensor::apply_unary_functions(ret, [](dtype data) -> dtype{
+      return std::cos(data);
+    });
+    return ret;
   }
   Tensor Tensor::tanh() const {
-    throw std::runtime_error("Unimplemented");
+     Tensor ret = clone();
+    Tensor::apply_unary_functions(ret, [](dtype data) -> dtype{
+      return std::tanh(data);
+    });
+    return ret;
   }
   Tensor tanh(const Tensor& tensor) {
-    throw std::runtime_error("Unimplemented");
+    Tensor ret = tensor.clone();
+    Tensor::apply_unary_functions(ret, [](dtype data) -> dtype{
+      return std::tanh(data);
+    });
+    return ret;
   }
 
   Tensor Tensor::clamp(dtype min, dtype max) const {
-    throw std::runtime_error("Unimplemented");
+    Tensor ret = clone();
+    Tensor::apply_unary_functions(ret, [min, max](dtype data) -> dtype{
+      return std::min(max, std::max(min, data));
+    });
+    return ret;
   }
 
   Tensor clamp(const Tensor& tensor, dtype min, dtype max) {
-    throw std::runtime_error("Unimplemented");
+    Tensor ret = tensor.clone();
+    Tensor::apply_unary_functions(ret, [min, max](dtype data) -> dtype{
+      return std::min(max, std::max(min, data));
+    });
+    return ret;
   }
 
   Tensor Tensor::log() const {
-    throw std::runtime_error("Unimplemented");
+    Tensor ret = clone();
+    Tensor::apply_unary_functions(ret, [](dtype data) -> dtype{
+      return std::log(data);
+    });
+    return ret;
   }
 
   Tensor log(const Tensor& tensor) {
-    throw std::runtime_error("Unimplemented");
+    Tensor ret = tensor.clone();
+    Tensor::apply_unary_functions(ret, [](dtype data) -> dtype{
+      return std::log(data);
+    });
+    return ret;
   }
 
   Tensor Tensor::exp() const {
-    throw std::runtime_error("Unimplemented");
+    Tensor ret = clone();
+    Tensor::apply_unary_functions(ret, [](dtype data) -> dtype{
+      return std::exp(data);
+    });
+    return ret;
   }
 
   Tensor exp(const Tensor& tensor) {
-    throw std::runtime_error("Unimplemented");
+    Tensor ret = tensor.clone();
+    Tensor::apply_unary_functions(ret, [](dtype data) -> dtype{
+      return std::exp(data);
+    });
+    return ret;
   }
 
   Tensor Tensor::pow(dtype exponent) const {
-    throw std::runtime_error("Unimplemented");
+    Tensor ret = clone();
+    Tensor::apply_unary_functions(ret, [exponent](dtype data) -> dtype{
+      return std::pow(data, exponent);
+    });
+    return ret;
   }
 
   Tensor pow(const Tensor& tensor, dtype exponent) {
-    throw std::runtime_error("Unimplemented");
+    Tensor ret = tensor.clone();
+    Tensor::apply_unary_functions(ret, [exponent](dtype data) -> dtype{
+      return std::pow(data, exponent);
+    });
+    return ret;
   }
 
   Tensor Tensor::sqrt() const {
-    throw std::runtime_error("Unimplemented");
+    Tensor ret = clone();
+    Tensor::apply_unary_functions(ret, [](dtype data) -> dtype{
+      return std::sqrt(data);
+    });
+    return ret;
   }
 
   Tensor sqrt(const Tensor& tensor) {
-    throw std::runtime_error("Unimplemented");
+    Tensor ret = tensor.clone();
+    Tensor::apply_unary_functions(ret, [](dtype data) -> dtype{
+      return std::sqrt(data);
+    });
+    return ret;
   }
 
   Tensor Tensor::sum(int dim, bool keepdims) const {

@@ -112,6 +112,8 @@ class Tensor {
   int get_offset() const { return offset_; }                        // for graderlib
   const Storage& get_storage() const { return storage_; }                        // for graderlib
   const int offset_at(int n) const; //return the physical idx of the n-th element
+  const int offset_atv(veci v) const; //return the physical idx of the element at 
+  
   /*
     clone, make contiguous and copy_from
   */
@@ -135,7 +137,8 @@ class Tensor {
   /*
     operators  
   */
-  void apply_unary_functions(Tensor& tensor, std::function<dtype(dtype)> func) const;
+  static void apply_unary_functions(Tensor& tensor, std::function<dtype(dtype)> func);
+  static Tensor apply_binary_functions(const Tensor& t1, const Tensor& t2, std::function<dtype(dtype, dtype)> func);
 
   Tensor operator-() const;
 
@@ -234,6 +237,7 @@ class Tensor {
   Tensor broadcast_to(const shape_t& shape) const;
   static std::pair<Tensor, Tensor> broadcast(const Tensor& lhs, const Tensor& rhs);
   static vec<Tensor> broadcast(const vec<Tensor>& tensors);
+  static std::pair<Tensor, Tensor> broadcast_for_matmul(const Tensor& lhs, const Tensor& rhs); //helper broadcast for matmul
 
 
   /*
