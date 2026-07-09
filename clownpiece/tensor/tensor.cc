@@ -694,26 +694,54 @@ namespace at {
   }
 
   Tensor Tensor::sum(int dim, bool keepdims) const {
-    throw std::runtime_error("Unimplemented");
+    int d = this->dim();
+    if (dim < 0) dim += d;
+    if (dim < 0 || dim >= d) {
+      throw std::runtime_error("Sum: invalid dimension");
+    }
+    shape_t out_shape = shape_;
+    out_shape[dim] = 1;
+    Tensor ret(out_shape, 0.0f);
+    for (int i = 0; i < shape_[dim]; ++i) {
+      ret = ret + narrow(dim, i, 1, false);
+    }
+    if (keepdims) {return ret;}
+    return ret.squeeze(dim);
   }
 
   Tensor sum(const Tensor& tensor, int dim, bool keepdims) {
-    throw std::runtime_error("Unimplemented");
+    return tensor.sum(dim, keepdims);
   }
 
   std::pair<Tensor, Tensor> Tensor::max(int dim, bool keepdims) const {
-    throw std::runtime_error("Unimplemented");
+    int d = this->dim();
+    if (dim < 0) dim += d;
+    if (shape_[dim] == 0) {throw std::runtime_error("Max: cannot reduce empty dimension");}
+    Tensor values = narrow(dim, 0, 1, false).clone();
+    Tensor indices(values.get_shape(), 0.0f);
+    for (int k = 1; k < shape_[dim]; ++k) {
+      Tensor cur = narrow(dim, k, 1, false);
+      for (int i = 0; i < values.numel(); ++i) {
+        if (cur.data_at(i) > values.data_at(i)) {
+          values.data_at(i) = cur.data_at(i);
+          indices.data_at(i) = static_cast<dtype>(k);
+        }
+      }
+    }
+    if (keepdims) {return {values, indices};}
+    return {values.squeeze(dim), indices.squeeze(dim)};
   }
 
   std::pair<Tensor, Tensor> max(const Tensor& tensor, int dim, bool keepdims) {
-    throw std::runtime_error("Unimplemented");
+    return tensor.max(dim, keepdims);
   }
 
   Tensor Tensor::softmax(int dim) const {
-    throw std::runtime_error("Unimplemented");
+    Tensor e = exp();
+    return e / e.sum(dim, true);
   }
   Tensor softmax(const Tensor& tensor, int dim) {
-    throw std::runtime_error("Unimplemented");
+    return tensor.softmax(dim);
   }
 
   /*
@@ -1159,10 +1187,26 @@ namespace at {
     Week3 adds-on
   */
   Tensor Tensor::mean(int dim, bool keepdims) const {
-    throw std::runtime_error("Unimplemented");
+    int d = this->dim();
+    if (dim < 0) {dim += d;}
+    if (dim < 0 || dim >= d || shape_[dim] != 1){throw std::runtime_error("Mean: invalid dimension");}
+    return sum(dim, keepdims) / shape_[dim];
   }
 
   Tensor Tensor::var(int dim, bool keepdims, bool unbiased) const {
-    throw std::runtime_error("Unimplemented");
+    int d = this->dim();
+    if (dim < 0) {dim += d;}
+    if (dim < 0 || dim >= d || shape_[dim] != 1){throw std::runtime_error("Var: invalid dimension");}
+    Tensor avg = mean(dim, true);
+    shape_t out_shape = shape_;
+    out_shape[dim] = 1;
+    Tensor t(out_shape, 0.0f);
+    for (int i = 0; i < shape_[dim]; ++i) {
+      Tensor s = narrow(dim, i, 1, false);
+      t = t + (s - avg) * (s - avg);
+    }
+    int n = unbiased ? shape_[dim] - 1 : shape_[dim];
+    if (keepdims) {return t / n;}
+    return (t / n).squeeze(dim);
   }
 };
