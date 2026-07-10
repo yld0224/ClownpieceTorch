@@ -1,4 +1,5 @@
 #include "meta.h"
+#include "parallel.h"
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 namespace py = pybind11;
@@ -382,17 +383,21 @@ namespace at {
   */
   void Tensor::apply_unary_functions(Tensor& tensor, std::function<dtype(dtype)> func) {
     int num = tensor.numel();
-    for (int i = 0; i < num; ++i) {
-      tensor.data_at(i) = func(tensor.data_at(i));
-    }
+    parallel_for(0, num, 16384, [&](int begin, int end) {
+      for (int i = begin; i < end; ++i) {
+        tensor.data_at(i) = func(tensor.data_at(i));
+      }
+    });
   }
 
   Tensor Tensor::apply_binary_functions(const Tensor& t1, const Tensor& t2, std::function<dtype(dtype, dtype)> func) {
     Tensor ret = Tensor(t1.shape_);
     int num = t1.numel();
-    for (int i = 0; i < num; ++i) {
-      ret.data_at(i) = func(t1.data_at(i), t2.data_at(i));
-    }
+    parallel_for(0, num, 16384, [&](int begin, int end) {
+      for (int i = begin; i < end; ++i) {
+        ret.data_at(i) = func(t1.data_at(i), t2.data_at(i));
+      }
+    });
     return ret;
   }
 
@@ -487,24 +492,28 @@ namespace at {
     ret_shape[d2] = l.shape_[d2];
     Tensor ret = Tensor(ret_shape);
     int num = ret.numel();
-    for (int i = 0; i < num; ++i) {
-      int tmp = i;
-      veci coord(ret_shape.size());
-      for (int j = ret_shape.size() - 1; j >= 0; --j) {
-        int idx = tmp % ret_shape[j];
-        tmp /= ret_shape[j];
-        coord[j] = idx;
+    const int reduction_size = l1.shape_[d1];
+    const int grain_size = std::max(1, 32768 / std::max(1, reduction_size));
+    parallel_for(0, num, grain_size, [&](int begin, int end) {
+      for (int i = begin; i < end; ++i) {
+        int tmp = i;
+        veci coord(ret_shape.size());
+        for (int j = ret_shape.size() - 1; j >= 0; --j) {
+          int idx = tmp % ret_shape[j];
+          tmp /= ret_shape[j];
+          coord[j] = idx;
+        }
+        veci coord_l1 = coord;
+        veci coord_r1 = coord;
+        dtype n = 0;
+        for (int j = 0; j < reduction_size; ++j) {
+          coord_l1[d1] = j;
+          coord_r1[d2] = j;
+          n += l1.storage_[l1.offset_atv(coord_l1)] * r1.storage_[r1.offset_atv(coord_r1)];
+        }
+        ret.storage_[ret.offset_atv(coord)] = n;
       }
-      veci coord_l1 = coord;
-      veci coord_r1 = coord;
-      dtype n = 0;
-      for (int j = 0; j < l1.shape_[d1]; ++j) {
-        coord_l1[d1] = j;
-        coord_r1[d2] = j;
-        n += l1.storage_[l1.offset_atv(coord_l1)] * r1.storage_[r1.offset_atv(coord_r1)];
-      }
-      ret.storage_[ret.offset_atv(coord)] = n;
-    }
+    });
     return ret;
   }
 
