@@ -1,5 +1,4 @@
 #include "parallel.h"
-
 #include <algorithm>
 #include <condition_variable>
 #include <cstdlib>
@@ -11,11 +10,17 @@
 #include <thread>
 #include <vector>
 
+#if CP_PARALLEL_BACKEND != CP_BACKEND_SERIAL && \
+    CP_PARALLEL_BACKEND != CP_BACKEND_STD_THREAD && \
+    CP_PARALLEL_BACKEND != CP_BACKEND_OPENMP && \
+    CP_PARALLEL_BACKEND != CP_BACKEND_THREAD_POOL
+#error "The selected parallel backend has not been implemented yet"
+#endif
+
 namespace at {
 namespace {
 
-#if CP_PARALLEL_BACKEND == CP_BACKEND_STD_THREAD || \
-    CP_PARALLEL_BACKEND == CP_BACKEND_THREAD_POOL
+#if CP_PARALLEL_BACKEND != CP_BACKEND_SERIAL
 unsigned int thread_count() {
   const char* configured = std::getenv("CP_NUM_THREADS");
   if (configured != nullptr) {
@@ -25,15 +30,12 @@ unsigned int thread_count() {
       return static_cast<unsigned int>(value);
     }
   }
-
   unsigned int detected = std::thread::hardware_concurrency();
   return detected == 0 ? 1 : detected;
 }
 #endif
 
 #if CP_PARALLEL_BACKEND == CP_BACKEND_THREAD_POOL
-thread_local bool is_thread_pool_worker = false;
-
 class ThreadPool {
  private:
   std::queue<std::function<void()>> queue_;
@@ -48,7 +50,6 @@ class ThreadPool {
     threads_.reserve(count);
     for (unsigned int i = 0; i < count; ++i) {
       threads_.emplace_back([this]() {
-        is_thread_pool_worker = true;
         while (true) {
           std::function<void()> task;
           {
@@ -147,11 +148,31 @@ void parallel_for(int begin, int end, int grain_size, const RangeTask& task) {
   if (first_error != nullptr) {
     std::rethrow_exception(first_error);
   }
-#elif CP_PARALLEL_BACKEND == CP_BACKEND_THREAD_POOL
-  if (is_thread_pool_worker) {
-    task(begin, end);
-    return;
+#elif CP_PARALLEL_BACKEND == CP_BACKEND_OPENMP
+  const int chunk_count = (end - begin + grain_size - 1) / grain_size;
+  const int workers = std::max(
+      1, std::min(chunk_count, static_cast<int>(thread_count())));
+  std::exception_ptr first_error;
+  std::mutex error_mutex;
+
+#pragma omp parallel for schedule(static) num_threads(workers)
+  for (int chunk = 0; chunk < chunk_count; ++chunk) {
+    const int range_begin = begin + chunk * grain_size;
+    const int range_end = std::min(range_begin + grain_size, end);
+    try {
+      task(range_begin, range_end);
+    } catch (...) {
+      std::lock_guard<std::mutex> lock(error_mutex);
+      if (first_error == nullptr) {
+        first_error = std::current_exception();
+      }
+    }
   }
+
+  if (first_error != nullptr) {
+    std::rethrow_exception(first_error);
+  }
+#elif CP_PARALLEL_BACKEND == CP_BACKEND_THREAD_POOL
   static ThreadPool pool;
   const int task_count = (end - begin + grain_size - 1) / grain_size;
   auto group = std::make_shared<TaskGroup>(task_count);

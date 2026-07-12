@@ -1,0 +1,23 @@
+{
+  "timestamp_utc": "2026-07-12T06:36:03.714368+00:00",
+  "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "cpu_model": "AMD Ryzen AI 9 H 465 w/ Radeon 880M",
+  "logical_cpus": 20,
+  "configured_threads": 10,
+  "python": "3.10.20",
+  "element_sizes": [
+    10000,
+    100000,
+    1000000,
+    5000000
+  ],
+  "matmul_sizes": [
+    32,
+    64,
+    128,
+    256
+  ],
+  "warmup": 2,
+  "element_repeats": 7,
+  "matmul_repeats": 5
+}

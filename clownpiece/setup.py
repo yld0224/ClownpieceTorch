@@ -6,6 +6,7 @@ import pybind11
 parallel_modes = {
     "serial": 0,
     "stdthread": 1,
+    "openmp": 2,
     "threadpool": 3,
 }
 
@@ -21,6 +22,9 @@ extra_link_args = []
 if parallel_mode in ("stdthread", "threadpool"):
     extra_compile_args.append('-pthread')
     extra_link_args.append('-pthread')
+elif parallel_mode == "openmp":
+    extra_compile_args.append('-fopenmp')
+    extra_link_args.append('-fopenmp')
 
 ext_modules = [
     Extension(
