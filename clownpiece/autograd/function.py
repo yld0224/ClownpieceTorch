@@ -52,26 +52,23 @@ class Function(Node):
     
     # run forward pass
     def apply(self, *args, **kwargs):
-      # your implement here
+        self.ctx = Context()
+        self.next_edges = [Edge.gradient_edge(arg) for arg in args if isinstance(arg, Tensor)]
+        with no_grad():
+            outputs = self.forward(self.ctx, *args, **kwargs)
+        for output_nr, output in enumerate(wrap_tuple(outputs)):
+            if isinstance(output, Tensor):
+                output.grad_fn = self
+                output.output_nr = output_nr
+                output.requires_grad_(True)
+        return outputs
 
-      # step 1. initialize self.ctx and populate self.next_edges
-
-      # step 2. outputs = self.forward(...) with no_grad
-
-      # step 3. set grad_fn for outputs to self
-
-      # step 4. return outputs
-
-      pass
     
     # run backward pass
     def run(self, *args):
-      # your implement here
-
-      # step 1. grad_inputs = self.backward(...) with no_grad
-
-      # step 2. return grad_inputs
-      pass
+        with no_grad():
+            grad_inputs = self.backward(self.ctx, *args)
+        return grad_inputs
 
 class AccumulateGrad(Function):
     """
@@ -80,20 +77,21 @@ class AccumulateGrad(Function):
     grad_fn for leaf tensors
     """
     def __init__(self, input: Tensor):
-      # your implement here
-
-      pass
+        super().__init__() 
+        self.tensor = input
     
-    # this forward should never be called
     @staticmethod
     def forward(ctx: Context):
         return None
     
-    @staticmethod
-    def backward(ctx: Context, output_grad: Tensor):
-      # your implement here
+    def backward(self, ctx: Context, output_grad: Tensor):
+        if self.tensor.grad is None:
+            self.tensor.grad = output_grad
+        else:
+            self.tensor.grad += output_grad
+        return
+
       
-      pass
 
 """
     Clone Contiguous

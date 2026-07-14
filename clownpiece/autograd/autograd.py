@@ -39,14 +39,12 @@ class Edge():
     
     @staticmethod
     def gradient_edge(tensor: Tensor) -> "Edge":
-      # your implement here
-
-      # case 1: tensor is not a leaf tensor -> use it's grad_fn and output_nr
-
-      # case 2: tensor is a leaf tensor and requires grad -> AccumulateGrad Function
-
-      # case 3: tensor is a leaf tensor and requires no grad -> node = None
-      pass
+        if tensor.grad_fn is not None:
+            return Edge(tensor.output_nr, tensor.grad_fn)
+        if tensor.requires_grad:
+            from clownpiece.autograd.function import AccumulateGrad
+            return Edge(0, AccumulateGrad(tensor))
+        return Edge(0, None)
 
 class GraphRoot(Node):
     """
@@ -54,17 +52,13 @@ class GraphRoot(Node):
     """
 
     def __init__(self, tensor: Tensor, grad: Tensor):
-      # your implement here
-
-      # step1. store the grad
-      # step2. create a single edge points to tensor.grad_fn
-      pass
+        super().__init__()
+        self.grad = grad
+        self.next_edges.append(Edge.gradient_edge(tensor))
     
     def run(self, *args, **kargs):
-      # your implement here
+        return self.grad
 
-      # step1. return the stored grad
-      pass
 
 class NodeTask():
     """
@@ -82,12 +76,11 @@ class NodeTask():
         self.inputs = inputs
         
     def run(self):
-        # your implement here
+        input_grads = wrap_tuple(self.node.run(*self.inputs))
+        for edge, input_grad in zip(self.node.next_edges, input_grads):
+            if edge.node is not None and input_grad is not None:
+                self.base.fill_input(edge.node, input_grad, edge.input_nr)
 
-        # step1. run the node with inputs
-
-        # step2. fill the input buffer in GraphTask
-        pass
 
 
 class GraphTask():
@@ -116,46 +109,111 @@ class GraphTask():
         
     # helper function to assign node_id and initialize self.nodes, dependencies and inputs_buffer
     def _construct_graph(self):
-        # your implement here
-        pass
+        i = 0
+        visited = set()
+        def dfs(start: Node):
+            nonlocal i
+            if start is None or id(start) in visited:
+                return
+            visited.add(id(start))
+            start.node_id = i
+            i += 1
+            self.nodes.append(start)
+            self.dependencies[start] = 0
+            self.inputs_buffer[start] = []
+            for edge in start.next_edges:
+                target = edge.node
+                if target is None:
+                    continue
+                dfs(target)
+                self.dependencies[target] += 1
+        for root in self.roots:
+            dfs(root)
         
     # execute
     def run(self):
-        # your implement here
-        pass
+        self._run_multi_thread()
 
     # for debug
     def _run_single_thread(self):
-        # your implement here
+        from collections import deque
+        queue = deque()
+        for root in self.roots:
+            queue.append(NodeTask(root, [], self))
+        while queue:
+            node_task = queue.pop()
+            node_task.run()
+            for edge in node_task.node.next_edges:
+                if edge.node is not None:
+                    self.dependencies[edge.node] -= 1
+                    if self.dependencies[edge.node] == 0:
+                        queue.append(NodeTask(edge.node, self.inputs_buffer[edge.node], self))
+            self.inputs_buffer.pop(node_task.node)
 
-        # perform topological sort to execute the graph
-
-        # while queue is not empty:
-        # 1. node_task = queue.pop()
-        # 2. node_task.run()
-        # 3. decrement dependencies count for target nodes of outbound edges
-        # 4. enqueue a new NodeTask if dependencies drops to zero. (remember to delete the node in inputs_buffer to release memory.)
-        pass
 
     # for production
     def _run_multi_thread(self):
-        # your implement here
+        import os
+        import threading
+        from queue import Queue
+        ready_queue = Queue()
+        state_lock = threading.Lock()
+        accumulate_lock = threading.Lock()
+        stop = object()
+        errors = []
+        for root in self.roots:
+            ready_queue.put(NodeTask(root, [], self))
+        def worker():
+            while True:
+                node_task = ready_queue.get()
+                try:
+                    if node_task is stop:
+                        return
+                    if node_task.node.next_edges:
+                        input_grads = wrap_tuple(node_task.node.run(*node_task.inputs))
+                    else:
+                        with accumulate_lock:
+                            input_grads = wrap_tuple(node_task.node.run(*node_task.inputs))
+                    with state_lock:
+                        for edge, input_grad in zip(node_task.node.next_edges, input_grads):
+                            if edge.node is not None and input_grad is not None:
+                                self.fill_input(edge.node, input_grad, edge.input_nr)
+                        for edge in node_task.node.next_edges:
+                            target = edge.node
+                            if target is None:
+                                continue
+                            self.dependencies[target] -= 1
+                            if self.dependencies[target] == 0:
+                                ready_queue.put(NodeTask(target, self.inputs_buffer[target], self,))
+                        self.inputs_buffer.pop(node_task.node, None)
+                except Exception as error:
+                    with state_lock:
+                        if not errors:
+                            errors.append(error)
+                finally:
+                    ready_queue.task_done()
 
-        # step1. maintain a shared ready queue for NodeTasks
-
-        # step2. def a worker function, similar to _run_single_thread.
-        # be careful: do not use `while queue is not empty` as exit condition directly. (why?)
-
-        # step3. spawn multiple worker threads.
-
-        # step4. wait for threads to join.
-        pass
+        worker_count = min(len(self.nodes), os.cpu_count() or 1)
+        workers = [threading.Thread(target=worker) for _ in range(worker_count)]
+        for thread in workers:
+            thread.start()
+        ready_queue.join()
+        for _ in workers:
+            ready_queue.put(stop)
+        for thread in workers:
+            thread.join()
+        if errors:
+            raise errors[0]
                     
     # accumulate input_grad to self.inputs_buffer[node][input_nr]
     def fill_input(self, node: Node, input_grad: Tensor, input_nr: int):
-        # your implement here
-
-        pass
+        buffer = self.inputs_buffer[node]
+        while len(buffer) <= input_nr:
+            buffer.append(None)
+        if buffer[input_nr] is None:
+            buffer[input_nr] = input_grad
+        else:
+            buffer[input_nr] += input_grad
 
 
 """
