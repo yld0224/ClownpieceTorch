@@ -109,11 +109,11 @@ class Clone(Function):
 class Contiguous(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor):
-        pass
+        return input.contiguous()
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        return grad_output
     
 """
     Subscriptor
@@ -122,11 +122,15 @@ class Contiguous(Function):
 class Subscriptor(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor, index_or_slice: Union[int, slice, List[int], List[slice]]):
-        pass
+        ctx.input_shape = input.shape
+        ctx.index_or_slice = index_or_slice
+        return input[index_or_slice]
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        grad_input = zeros(ctx.input_shape)
+        grad_input[ctx.index_or_slice].copy_(grad_output)
+        return grad_input
     
 """
     Element-wise Binary and Unary Operators
