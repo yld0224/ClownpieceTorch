@@ -489,7 +489,7 @@ namespace at {
     shape_t ret_shape = r1.shape_;
     int d1 = l1.dim() - 1;
     int d2 = r1.dim() - 2;
-    ret_shape[d2] = l.shape_[d2];
+    ret_shape[d2] = l.shape_[l.dim() - 2];
     Tensor ret = Tensor(ret_shape);
     int num = ret.numel();
     const int reduction_size = l1.shape_[d1];

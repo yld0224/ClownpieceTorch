@@ -347,11 +347,28 @@ class Sqrt(Function):
 class MatMul(Function):
     @staticmethod
     def forward(ctx: Context, input1: Tensor, input2: Tensor):
-        pass
+        ctx.save_for_backward(input1, input2)
+        return input1.matmul(input2)
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        A, B = ctx.get_saved_tensors()
+        A1 = A.unsqueeze(0) if len(A.shape) == 1 else A
+        B1 = B.unsqueeze(1) if len(B.shape) == 1 else B
+        C1 = grad_output
+        if len(A.shape) == 1 and len(B.shape) == 1:
+            C1 = grad_output.reshape([1, 1])
+        elif len(A.shape) == 1:
+            C1 = grad_output.unsqueeze(-2)
+        elif len(B.shape) == 1:
+            C1 = grad_output.unsqueeze(-1)
+        grad_A1 = C1.matmul(B1.transpose(-1, -2))
+        grad_B1 = A1.transpose(-1, -2).matmul(C1)
+        grad_A1 = reduce_broadcast(grad_A1, A1.shape, grad_A1.shape, end_dim = 2)
+        grad_B1 = reduce_broadcast(grad_B1, B1.shape, grad_B1.shape, end_dim = 2)
+        grad_A = grad_A1.squeeze(-2) if len(A.shape) == 1 else grad_A1
+        grad_B = grad_B1.squeeze(-1) if len(B.shape) == 1 else grad_B1
+        return (grad_A, grad_B)
 
 """
     Reduction and Normalization Operations

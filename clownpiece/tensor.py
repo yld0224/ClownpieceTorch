@@ -650,7 +650,7 @@ class Tensor(TensorBase):
   def __rtruediv__(self, other, FunctionClass=None)->"Tensor":
     return FunctionClass().apply(other, self)
   
-  """
+  
  
   @tensor_op('matmul', 'MatMul')
   def matmul(self, other, FunctionClass=None)->"Tensor":
@@ -667,7 +667,7 @@ class Tensor(TensorBase):
       raise TypeError(f"Expected Tensor, got {type(other).__name__}")
     return other.matmul(self)
   
-
+  """
   @tensor_op('sum', 'Sum')
   def sum(self, dim=None, keepdims=False, FunctionClass=None)->"Tensor":
     return FunctionClass().apply(self, dim, keepdims)
