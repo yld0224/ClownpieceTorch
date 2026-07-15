@@ -667,7 +667,6 @@ class Tensor(TensorBase):
       raise TypeError(f"Expected Tensor, got {type(other).__name__}")
     return other.matmul(self)
   
-  """
   @tensor_op('sum', 'Sum')
   def sum(self, dim=None, keepdims=False, FunctionClass=None)->"Tensor":
     return FunctionClass().apply(self, dim, keepdims)
@@ -679,7 +678,7 @@ class Tensor(TensorBase):
   @tensor_op('softmax', 'Softmax')
   def softmax(self, dim=-1, FunctionClass=None)->"Tensor":
     return FunctionClass().apply(self, dim)
-  
+  """
 
   
   @tensor_op('permute', 'Permute')

@@ -374,37 +374,73 @@ class MatMul(Function):
     Reduction and Normalization Operations
 """
 
-def reduce_forward_wrapper(forward_impl):
-    pass
-
 class Sum(Function):
     @staticmethod
-    @reduce_forward_wrapper
     def forward(ctx: Context, input: Tensor, dim: Union[int, List[int], None], keepdims: bool = False):
-        pass
-    
+        input_shape = list(input.shape)
+        ndim = len(input_shape)
+        if dim is None: dims = list(range(ndim))
+        elif isinstance(dim, int): dims = [dim]
+        else: dims = list(dim)
+        normalized_dims = []
+        for current_dim in dims:
+            if current_dim < 0:
+                current_dim += ndim
+            if current_dim < 0 or current_dim >= ndim:
+                raise IndexError("dimension out of range")
+            normalized_dims.append(current_dim)
+        ctx.input_shape = input_shape
+        ctx.dims = normalized_dims
+        return input.sum(normalized_dims, keepdims)
+
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
-    
+        reduced_shape = [1 if dim in ctx.dims else size for dim, size in enumerate(ctx.input_shape)]
+        return grad_output.reshape(reduced_shape).broadcast_to(ctx.input_shape)
+
+
 class Max(Function):
     @staticmethod
-    @reduce_forward_wrapper
     def forward(ctx: Context, input: Tensor, dim: int, keepdims: bool = False):
-        pass
-    
+        input_shape = list(input.shape)
+        ndim = len(input_shape)
+        normalized_dim = dim + ndim if dim < 0 else dim
+        if normalized_dim < 0 or normalized_dim >= ndim:
+            raise IndexError("dimension out of range")
+        values, indices = input.max(normalized_dim, keepdims)
+        ctx.input_shape = input_shape
+        ctx.dim = normalized_dim
+        ctx.keepdims = keepdims
+        ctx.save_for_backward(indices)
+        return values, indices
+
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor, grad_indices: Tensor = None):
-        pass
-    
+        indices, = ctx.get_saved_tensors()
+        if not ctx.keepdims:
+            grad_output = grad_output.unsqueeze(ctx.dim)
+            indices = indices.unsqueeze(ctx.dim)
+        grad_input = zeros(ctx.input_shape)
+        grad_input.scatter_(ctx.dim, indices, grad_output)
+        return grad_input
+
 class Softmax(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor, dim: int):
-        pass
+        ndim = len(input.shape)
+        normalized_dim = dim + ndim if dim < 0 else dim
+        if normalized_dim < 0 or normalized_dim >= ndim:
+            raise IndexError("dimension out of range")
+        out = input.softmax(dim)
+        ctx.dim = normalized_dim
+        ctx.save_for_backward(out)
+        return out
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        s, = ctx.get_saved_tensors()
+        dot = (grad_output * s).sum(ctx.dim, keepdims = True)
+        return s * (grad_output - dot)
     
 """
     Shape Manipulation
