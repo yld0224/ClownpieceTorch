@@ -211,7 +211,7 @@ class GraphTask():
         while len(buffer) <= input_nr:
             buffer.append(None)
         if buffer[input_nr] is None:
-            buffer[input_nr] = input_grad
+            buffer[input_nr] = input_grad.clone()
         else:
             buffer[input_nr] += input_grad
 

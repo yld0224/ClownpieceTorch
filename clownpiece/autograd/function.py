@@ -86,7 +86,7 @@ class AccumulateGrad(Function):
     
     def backward(self, ctx: Context, output_grad: Tensor):
         if self.tensor.grad is None:
-            self.tensor.grad = output_grad
+            self.tensor.grad = output_grad.clone()
         else:
             self.tensor.grad += output_grad
         return
@@ -139,162 +139,206 @@ class Subscriptor(Function):
 class Neg(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor):
-        pass
+        return input.__neg__()
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        return grad_output.__neg__()
 
 # backward method for broadcast
 def reduce_broadcast(grad_output: Tensor, input_shape: List[int], output_shape: List[int], end_dim: int = 0) -> Tensor:
-  # end_dim argument is for matmul, which only broadcasts dim <= dim() - 2
-  pass
+    offset = len(output_shape) - len(input_shape)
+    result = grad_output
+    for i in range(offset):
+        result = result.sum(0, False)
+    for i in range(len(input_shape) - end_dim):
+        if input_shape[i] == 1 and output_shape[i + offset] != 1:
+            result = result.sum(i, True)
+    return result
 
 # binary op forward decorator
 def binary_op_forward_wrapper(forward_impl):
-  # save input shapes into ctx
-  # call forward_impl
-  pass
+    def wrapped_forward(ctx: Context, input1: Tensor, input2: Tensor):
+        ctx.save_for_backward(input1, input2)
+        ctx.input_shapes = (list(input1.shape), list(input2.shape))
+        output = forward_impl(ctx, input1, input2)
+        ctx.output_shape = list(output.shape)
+        return output
+    return wrapped_forward
+
 
 # binary op backward decorator
 def binary_op_backward_wrapper(backward_impl):
-  # call backward_impl to get grad_inputs_broadcasted
-  # call reduce_broadcast to get grad_inputs
-  pass
+    def wrapped_backward(ctx: Context, grad_output: Tensor):
+        grad_inputs = wrap_tuple(backward_impl(ctx, grad_output))
+        return (reduce_broadcast(grad_inputs[0], ctx.input_shapes[0], ctx.output_shape), 
+                reduce_broadcast(grad_inputs[1], ctx.input_shapes[1], ctx.output_shape))
+    return wrapped_backward
+
 
 class Add(Function):
     @staticmethod
     @binary_op_forward_wrapper
     def forward(ctx: Context, input1: Tensor, input2: Tensor):
-        pass
+        return input1.__add__(input2)
     
     @staticmethod
     @binary_op_backward_wrapper
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        return (grad_output, grad_output)
     
 class Sub(Function):
     @staticmethod
     @binary_op_forward_wrapper
     def forward(ctx: Context, input1: Tensor, input2: Tensor):
-        pass
+        return input1.__sub__(input2)
     
     @staticmethod
     @binary_op_backward_wrapper
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        return (grad_output, grad_output.__neg__())
     
 class Mul(Function):
     @staticmethod
     @binary_op_forward_wrapper
     def forward(ctx: Context, input1: Tensor, input2: Tensor):
-        pass
+        return input1.__mul__(input2)
     
     @staticmethod
     @binary_op_backward_wrapper
-    def backward(ctx, grad_output):
-        pass
+    def backward(ctx: Context, grad_output: Tensor):
+        input1, input2 = ctx.get_saved_tensors()
+        return (grad_output.__mul__(input2), grad_output.__mul__(input1))
     
 class Div(Function):
     @staticmethod
     @binary_op_forward_wrapper
     def forward(ctx: Context, input1: Tensor, input2: Tensor):
-        pass
+        return input1.__truediv__(input2)
     
     @staticmethod
     @binary_op_backward_wrapper
-    def backward(ctx, grad_output):
-        pass
+    def backward(ctx: Context, grad_output: Tensor):
+        input1, input2 = ctx.get_saved_tensors()
+        grad_input1 = grad_output / input2
+        grad_input2 = -grad_output * input1 / (input2 * input2)
+        return (grad_input1, grad_input2)
     
 class Sign(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor):
-        pass
+        return input.sign()
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        return zeros_like(grad_output)
     
 class Abs(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor):
-        pass
+        ctx.save_for_backward(input)
+        return input.abs()
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        input, = ctx.get_saved_tensors()
+        return grad_output * input.sign()
     
 class Sin(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor):
-        pass
+        ctx.save_for_backward(input)
+        return input.sin()
         
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        input, = ctx.get_saved_tensors()
+        return grad_output * input.cos()
 
 class Cos(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor):
-        pass
+        ctx.save_for_backward(input)
+        return input.cos()
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        input, = ctx.get_saved_tensors()
+        return grad_output * (-input.sin())
 
 class Tanh(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor):
-        pass
+        out = input.tanh()
+        ctx.save_for_backward(out)
+        return out
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        out, = ctx.get_saved_tensors()
+        return grad_output * (1 - out * out)
 
 class Clamp(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor, min_val: float, max_val: float):
-        pass
+        ctx.min_val = min_val
+        ctx.max_val = max_val
+        out = input.clamp(min_val, max_val)
+        ctx.save_for_backward(input)
+        return out
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        input, = ctx.get_saved_tensors()
+        mask = (input >= ctx.min_val) * (input <= ctx.max_val)
+        return grad_output * mask
 
 class Log(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor):
-        pass
+        ctx.save_for_backward(input)
+        return input.log()
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        input, = ctx.get_saved_tensors()
+        return grad_output * (1 / input)
 
 class Exp(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor):
-        pass
+        out = input.exp()
+        ctx.save_for_backward(out)
+        return out
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        input, = ctx.get_saved_tensors()
+        return grad_output * input
 
 class Pow(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor, exponent: float): 
-        pass
+        ctx.save_for_backward(input)
+        ctx.exp = exponent
+        return input.pow(exponent)
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        input, = ctx.get_saved_tensors()
+        return grad_output * ctx.exp * (input.pow(ctx.exp - 1))
     
 class Sqrt(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor):
-        pass
+        out = input.sqrt()
+        ctx.save_for_backward(out)
+        return out
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        input, = ctx.get_saved_tensors()
+        return grad_output * (1 / (2 * input))
     
 """
     Matrix Multiplication
