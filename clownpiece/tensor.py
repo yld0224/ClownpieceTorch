@@ -678,7 +678,7 @@ class Tensor(TensorBase):
   @tensor_op('softmax', 'Softmax')
   def softmax(self, dim=-1, FunctionClass=None)->"Tensor":
     return FunctionClass().apply(self, dim)
-  """
+  
 
   
   @tensor_op('permute', 'Permute')
@@ -739,7 +739,7 @@ class Tensor(TensorBase):
       return FunctionClass().apply(*inputs)
   
   
-    
+  
   @tensor_op('mean', 'Mean')
   def mean(self, dim: int, keepdims: bool = False, FunctionClass=None) -> "Tensor":
       return FunctionClass().apply(self, dim, keepdims)
@@ -748,7 +748,7 @@ class Tensor(TensorBase):
   def var(self, dim: int, keepdims: bool = False, unbiased: bool = True, FunctionClass=None) -> "Tensor":
       return FunctionClass().apply(self, dim, keepdims, unbiased)
       
-  """
+  
   """
   STR
   """

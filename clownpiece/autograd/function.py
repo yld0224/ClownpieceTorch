@@ -449,116 +449,147 @@ class Softmax(Function):
 class Permute(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor, perm: List[int]):
-        pass
+        inv_perm = []
+        for _ in range(len(perm)):
+            inv_perm.append(None)
+        for i in range(len(perm)):
+            inv_perm[perm[i]] = i
+        ctx.perm = inv_perm
+        return input.permute(perm)
 
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        return grad_output.permute(ctx.perm)
     
 class Transpose(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor, dim0: int, dim1: int):
-        pass
+        ctx.dim0 = dim1
+        ctx.dim1 = dim0
+        return input.transpose(dim0, dim1)
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        return grad_output.transpose(ctx.dim0, ctx.dim1)
 
 class Reshape(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor, shape: List[int]):
-        pass
+        ctx.ori_shape = list(input.shape)
+        return input.reshape(shape)
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        return grad_output.reshape(ctx.ori_shape)
     
 class View(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor, shape: List[int]):
-        pass
+        ctx.ori_shape = list(input.shape)
+        return input.view(shape)
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        return grad_output.reshape(ctx.ori_shape)
     
 class Narrow(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor, dim: int, start: int, length: int):
-        pass
+        ctx.input_shape = list(input.shape)
+        ctx.dim = dim
+        ctx.start = start
+        ctx.length = length
+        return input.narrow(dim, start, length)
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        grad_input = zeros(ctx.input_shape)
+        target = grad_input.narrow(ctx.dim, ctx.start, ctx.length)
+        target.copy_(grad_output)
+        return grad_input
     
 class Chunk(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor, chunks: int, dim: int = 0):
-        pass
-        
+        ctx.dim = dim
+        return input.chunk(chunks, dim)
+
     @staticmethod
     def backward(ctx: Context, *grad_outputs: Tensor):
-        pass
+        return Tensor.cat(list(grad_outputs), ctx.dim)
     
 class Split(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor, split: Union[int, List[int]], dim: int = 0):
-        pass
+        ctx.dim = dim
+        return input.split(split, dim)
 
     @staticmethod
     def backward(ctx: Context, *grad_outputs: Tensor):
-        pass
+        return Tensor.cat(list(grad_outputs), ctx.dim)
     
 class Stack(Function):
     @staticmethod
     def forward(ctx: Context, *inputs: Tensor, dim: int = 0):
-        pass
+        ctx.dim = dim
+        return Tensor.stack(list(inputs), dim)
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        tensors =  grad_output.split(1, ctx.dim)
+        return tuple(tensor.squeeze(ctx.dim) for tensor in tensors)
     
 class Cat(Function):
     @staticmethod
     def forward(ctx: Context, *inputs: Tensor, dim: int = 0):
-        pass
+        ctx.dim = dim
+        ctx.split = [tensor.shape[dim] for tensor in inputs]
+        return Tensor.cat(list(inputs), dim)
     
     @staticmethod
     def backward(ctx, grad_output: Tensor):
-        pass
+        return tuple(grad_output.split(ctx.split, ctx.dim))
         
 class Squeeze(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor, dim: int = 0):
-        pass
+        ctx.dim = dim
+        return input.squeeze(dim)
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):    
-        pass
+        return grad_output.unsqueeze(ctx.dim)
     
 class Unsqueeze(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor, dim: int = 0):
-        pass
+        ctx.dim = dim
+        return input.unsqueeze(dim)
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        return grad_output.squeeze(ctx.dim)
     
 class BroadcastTo(Function):
     @staticmethod
     def forward(ctx: Context, input: Tensor, shape: List[int]):
-        pass
+        ctx.ori_shape = list(input.shape)
+        return input.broadcast_to(shape)
     
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor):
-        pass
+        return reduce_broadcast(grad_output, ctx.ori_shape, grad_output.shape)
     
 class Broadcast(Function):
     @staticmethod
     def forward(ctx: Context, *inputs: Tensor):
-        pass
+        ctx.ori_shapes = [list(tensor.shape) for tensor in inputs]
+        return Tensor.broadcast(*inputs)
+        
     
     @staticmethod
     def backward(ctx: Context, *grad_outputs: Tensor):
-        pass
+        output = list()
+        for i in range(len(ctx.ori_shapes)):
+            output.append(reduce_broadcast(grad_outputs[i], ctx.ori_shapes[i], grad_outputs[i].shape))
+        return tuple(output)
