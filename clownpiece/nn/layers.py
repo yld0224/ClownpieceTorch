@@ -11,15 +11,24 @@ import math
 class Linear(Module):
 
   def __init__(self, in_features: int, out_features: int, bias: bool=True):
-    # remember to wrap W and b in Parameter class, otherwise they won't be registered.
-    # for now, init W, b with empty
-    pass
+    super().__init__()
+    self.in_features = in_features
+    self.out_features = out_features
+    self.weight = Parameter(Tensor.zeros([out_features, in_features]))
+    if bias:
+      self.bias = Parameter(Tensor.zeros([out_features]))
+    else:
+      self.register_parameter("bias", None)
+    
 
   def forward(self, x: Tensor) -> Tensor:
-    pass
+    out =  x @ self.weight.transpose(-1, -2)
+    if self.bias is not None:
+      out = out + self.bias
+    return out
 
   def extra_repr(self):
-    pass
+    return (f"in_features={self.in_features}, out_features={self.out_features}, bias={self.bias is not None}")
 
 
 class Embedding(Module):
