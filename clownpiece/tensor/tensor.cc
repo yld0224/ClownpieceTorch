@@ -1198,14 +1198,14 @@ namespace at {
   Tensor Tensor::mean(int dim, bool keepdims) const {
     int d = this->dim();
     if (dim < 0) {dim += d;}
-    if (dim < 0 || dim >= d || shape_[dim] != 1){throw std::runtime_error("Mean: invalid dimension");}
+    if (dim < 0 || dim >= d){throw std::runtime_error("Mean: invalid dimension");}
     return sum(dim, keepdims) / shape_[dim];
   }
 
   Tensor Tensor::var(int dim, bool keepdims, bool unbiased) const {
     int d = this->dim();
     if (dim < 0) {dim += d;}
-    if (dim < 0 || dim >= d || shape_[dim] != 1){throw std::runtime_error("Var: invalid dimension");}
+    if (dim < 0 || dim >= d) {throw std::runtime_error("Var: invalid dimension");}
     Tensor avg = mean(dim, true);
     shape_t out_shape = shape_;
     out_shape[dim] = 1;

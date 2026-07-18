@@ -593,3 +593,41 @@ class Broadcast(Function):
         for i in range(len(ctx.ori_shapes)):
             output.append(reduce_broadcast(grad_outputs[i], ctx.ori_shapes[i], grad_outputs[i].shape))
         return tuple(output)
+
+class Mean(Function):
+    @staticmethod
+    def forward(ctx: Context, input: Tensor, dim: int, keepdims: bool = False):
+        input_shape = list(input.shape)
+        normalized_dim = dim + len(input_shape) if dim < 0 else dim
+        ctx.input_shape = input_shape
+        ctx.reduced_shape = list(input_shape)
+        ctx.reduced_shape[normalized_dim] = 1
+        ctx.N = input_shape[normalized_dim]
+        return input.mean(normalized_dim, keepdims)
+
+    @staticmethod
+    def backward(ctx: Context, grad_output: Tensor):
+        grad_output = grad_output.reshape(ctx.reduced_shape)
+        return (grad_output / ctx.N).broadcast_to(ctx.input_shape)
+
+class Var(Function):
+    @staticmethod
+    def forward(ctx: Context, input: Tensor, dim: int, keepdims: bool = False, unbiased: bool = True):
+        input_shape = list(input.shape)
+        normalized_dim = dim + len(input_shape) if dim < 0 else dim
+        N = input_shape[normalized_dim]
+        mean = input.mean(normalized_dim, True)
+        denominator = N - 1 if unbiased else N
+        ctx.input_shape = input_shape
+        ctx.reduced_shape = list(input_shape)
+        ctx.reduced_shape[normalized_dim] = 1
+        ctx.denominator = denominator
+        ctx.save_for_backward(input, mean)
+        return input.var(normalized_dim, keepdims, unbiased)
+
+    @staticmethod
+    def backward(ctx: Context, grad_output: Tensor):
+        input, mean = ctx.get_saved_tensors()
+        grad_output = grad_output.reshape(ctx.reduced_shape)
+        grad_output = grad_output.broadcast_to(ctx.input_shape)
+        return grad_output * (input - mean) * (2.0 / ctx.denominator)
