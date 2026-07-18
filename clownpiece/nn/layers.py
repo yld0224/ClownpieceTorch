@@ -36,22 +36,41 @@ class Linear(Module):
 
 class Embedding(Module):
     def __init__(self, num_embd: int, embd_dim: int):
-      pass
+      super().__init__()
+      self.num_embd = num_embd
+      self.embd_dim = embd_dim
+      self.weight = Parameter(Tensor.zeros([num_embd, embd_dim]))
+      init.normal_(self.weight, 0, 1.0)
 
     def forward(self, x: Tensor) -> Tensor:
-      pass
+      one_hot_shape = list(x.shape) + [self.num_embd]
+      one_hot = Tensor.zeros(one_hot_shape)
+      one_hot.scatter_(-1, x, Tensor.ones(x.shape))
+      return one_hot @ self.weight
     
 class LayerNorm(Module):
     def __init__(self, num_features: int, eps: float = 1e-5, affine: bool = True):
-      # input is reshaped to (-1, num_features) for normalziation.
-      # for example:
-      #   to normalize last two dimensions of tensor (batch_size, height, width)
-      #   then num_features should be height x width
-      # this interface differs from pytorch
-      pass
+      super().__init__()
+      self.num_features = num_features
+      self.eps = eps
+      self.affine = affine
+      if affine:
+        self.weight = Parameter(Tensor.ones([num_features]))
+        self.bias = Parameter(Tensor.zeros([num_features]))
+      else:
+        self.register_parameter("weight", None)
+        self.register_parameter("bias", None)
+      # input is reshaped to (-1, num_features) for normalziation. # for example: # to normalize last two dimensions of tensor (batch_size, height, width) # then num_features should be height x width # this interface differs from pytorch
 
     def forward(self, x: Tensor) -> Tensor:
-      pass
+      ori_shape = x.shape
+      reshaped = x.reshape([-1, self.num_features])
+      mean = reshaped.mean(-1, True)
+      var = reshaped.var(-1, True, False)
+      output = (reshaped - mean) / (var + self.eps).sqrt()
+      if self.affine:
+        output = output * self.weight + self.bias
+      return output.reshape(ori_shape)
 
 class BatchNorm(Module):
     def __init__(self, num_features: int, eps: float = 1e-5, momentum: float = 0.1, affine: bool = True):
