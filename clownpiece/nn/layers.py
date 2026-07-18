@@ -15,8 +15,11 @@ class Linear(Module):
     self.in_features = in_features
     self.out_features = out_features
     self.weight = Parameter(Tensor.zeros([out_features, in_features]))
+    bound = 1 / math.sqrt(self.in_features)
+    init.uniform_(self.weight, -bound, bound)
     if bias:
       self.bias = Parameter(Tensor.zeros([out_features]))
+      init.uniform_(self.bias, -bound, bound)
     else:
       self.register_parameter("bias", None)
     

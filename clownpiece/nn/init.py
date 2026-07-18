@@ -51,33 +51,60 @@ def _calculate_fan_in_and_fan_out(tensor: Tensor) -> tuple[int, int]:
     
     return fan_in, fan_out
 
+@_no_grad_init
 def constants_(tensor: Tensor, value: float):
-  pass
+  t = Tensor.ones_like(tensor) * value
+  tensor.copy_(t)
 
+@_no_grad_init
 def zeros_(tensor: Tensor):
-  pass  
+  t = Tensor.zeros_like(tensor)
+  tensor.copy_(t)
 
+@_no_grad_init
 def ones_(tensor: Tensor):
-  pass
+  t = Tensor.ones_like(tensor)
+  tensor.copy_(t)
 
+@_no_grad_init
 def normal_(tensor: Tensor, mean: float = 0.0, std: float = 1.0):
-  pass
+  t = Tensor.randn_like(tensor) * std + mean
+  tensor.copy_(t)
 
+@_no_grad_init
 def uniform_(tensor: Tensor, low: float = 0.0, high: float = 1.0):
-  pass
+  values = [random.uniform(low, high) for _ in range(len(tensor))]
+  value = Tensor(values).reshape(tensor.shape)
+  tensor.copy_(value)
 
+@_no_grad_init
 def xavier_uniform_(tensor: Tensor, gain: float = 1.0):
-  pass
+  fan_in, fan_out = _calculate_fan_in_and_fan_out(tensor)
+  a = gain * math.sqrt(6 / (fan_in + fan_out))
+  uniform_(tensor, -a, a)
 
+@_no_grad_init
 def xavier_normal_(tensor: Tensor, gain: float = 1.0):
-  pass
+  fan_in, fan_out = _calculate_fan_in_and_fan_out(tensor)
+  std = gain * math.sqrt(2 / (fan_in + fan_out))
+  normal_(tensor, 0, std)
 
-def kaiming_uniform_(
-    tensor: Tensor, a: float = 0, mode: str = "fan_in", nonlinearity: str = "leaky_relu"
-):
-  pass
+@_no_grad_init
+def kaiming_uniform_(tensor: Tensor, a: float = 0, mode: str = "fan_in", nonlinearity: str = "leaky_relu"):
+  fan_in, fan_out = _calculate_fan_in_and_fan_out(tensor)
+  if mode == "fan_in": fan_mode = fan_in
+  elif mode == "fan_out": fan_mode = fan_out
+  else: raise ValueError("Invalue fan mode")
+  gain = calcuate_gain(nonlinearity, a)
+  b = gain * math.sqrt(3 / fan_mode)
+  uniform_(tensor, -b, b)
+  
 
-def kaiming_normal_(
-    tensor: Tensor, a: float = 0, mode: str = "fan_in", nonlinearity: str = "leaky_relu"
-):
-  pass
+def kaiming_normal_(tensor: Tensor, a: float = 0, mode: str = "fan_in", nonlinearity: str = "leaky_relu"):
+  fan_in, fan_out = _calculate_fan_in_and_fan_out(tensor)
+  if mode == "fan_in": fan_mode = fan_in
+  elif mode == "fan_out": fan_mode = fan_out
+  else: raise ValueError("Invalue fan mode")
+  gain = calcuate_gain(nonlinearity, a)
+  std = gain / math.sqrt(fan_mode)
+  normal_(tensor, 0, std)
