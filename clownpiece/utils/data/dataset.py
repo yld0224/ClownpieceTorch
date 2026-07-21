@@ -2,6 +2,7 @@ from typing import Callable, List, Any, Union
 import os
 from PIL import Image
 import numpy as np
+import csv
 
 from clownpiece.tensor import Tensor
 
@@ -33,19 +34,24 @@ class CSVDataset(Dataset):
     transform: Callable
 
     def __init__(self, file_path: str, transform: Callable = None):
-        # load CSV, apply transform
-        pass
+        self.file_path = file_path
+        self.transform = transform
+        self.data = []
+        self.load_data()
 
     def load_data(self):
-        # read CSV and store transformed rows
-        # should be called at the end of __init__
-        pass
+        with open(self.file_path, "r", newline="", encoding="utf-8") as file:
+            reader = csv.reader(file)
+            for row in reader:
+                if self.transform is not None:
+                    row = self.transform(row)
+                self.data.append(row)
 
     def __getitem__(self, index):
-        pass
+        return self.data[index]
 
     def __len__(self):
-        pass
+        return len(self.data)
 
 """
 Image
@@ -60,38 +66,74 @@ class ImageDataset(Dataset):
     class_to_idx: dict[str, int]
 
     def __init__(self, file_path: str, transform: Callable = None):
-        pass
+        self.file_path = file_path
+        self.transform = transform
+        self.data = []
+        self.labels = []
+        self.class_to_idx = {}
+        self.load_data()
 
     def load_data(self):
-        # 1. read the subdirectories
-        # 2. assign label_id for each subdirectory (i.e., class label)
-        # 3. read files in subdirectory
-        # 4.    convert PIL Image to np.ndarray
-        # 5.    apply transform
-        # 6.    store transformed image and label_id
-        pass
+        class_names = []
+        for name in os.listdir(self.file_path):
+            class_path = os.path.join(self.file_path, name)
+            if os.path.isdir(class_path):
+                class_names.append(name)
+        class_names.sort()
+        self.class_to_idx = {name : index for index, name in enumerate(class_names)}
+        for class_name in class_names:
+            label_id = self.class_to_idx[class_name]
+            class_path = os.path.join(self.file_path, class_name)
+            for filename in sorted(os.listdir(class_path)):
+                image_path = os.path.join(class_path, filename)
+                if not os.path.isfile(image_path):
+                    continue
+                with Image.open(image_path) as image:
+                    image_array = np.array(image)
+                if self.transform is not None:
+                    image_array = self.transform(image_array)
+                self.data.append(image_array)
+                self.labels.append(label_id)
 
     def __getitem__(self, index):
-        # index->(image, label_id)
-        pass
+        return (self.data[index], self.labels[index])
 
     def __len__(self):
-        pass
+        return len(self.data)
   
 """
 Image Transforms
 """
 
-# These are functions that return desired transforms
-#   args -> (np.ndarray -> np.ndarray or Tensor)
+
 def sequential_transform(*trans):
-    pass
+    def transform(data):
+        for tran in trans:
+            data = tran(data)
+        return data
+    return transform
 
 def resize_transform(size):
-    pass
+    if isinstance(size, int):
+        height = size
+        width = size
+    else:
+        height, width = size
+    def transform(image: np.ndarray) -> np.ndarray:
+        image = Image.fromarray(image)
+        resized_image = image.resize((width, height), Image.Resampling.BILINEAR)
+        return np.array(resized_image)
+    return transform
 
 def normalize_transform(mean, std):
-    pass
+    mean_arr = np.asarray(mean, dtype=float)
+    std_arr = np.asarray(std, dtype=float)
+    def transform(image: np.ndarray) -> np.ndarray:
+        image = image.astype(np.float32) / 255.0
+        return (image - mean_arr) / std_arr
+    return transform
 
 def to_tensor_transform():
-    pass
+    def transform(image):
+        return Tensor(image.tolist())
+    return transform
