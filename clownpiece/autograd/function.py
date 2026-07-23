@@ -631,3 +631,27 @@ class Var(Function):
         grad_output = grad_output.reshape(ctx.reduced_shape)
         grad_output = grad_output.broadcast_to(ctx.input_shape)
         return grad_output * (input - mean) * (2.0 / ctx.denominator)
+
+
+class Unfold(Function):
+    @staticmethod
+    def forward(ctx: Context, input: Tensor, kernel_height: int, kernel_width: int):
+        ctx.shape = input.shape
+        ctx.kernel_height = kernel_height
+        ctx.kernel_width = kernel_width
+        return input.unfold(kernel_height, kernel_width)
+
+    @staticmethod
+    def backward(ctx: Context, grad_output: Tensor):
+        return grad_output.fold(ctx.shape, ctx.kernel_height, ctx.kernel_width)
+
+class Fold(Function):
+    @staticmethod
+    def forward(ctx: Context, input: Tensor, output_shape, kernel_height: int, kernel_width: int):
+        ctx.kernel_height = kernel_height
+        ctx.kernel_width = kernel_width
+        return input.fold(output_shape, kernel_height, kernel_width)
+
+    @staticmethod
+    def backward(ctx: Context, grad_output: Tensor):
+        return grad_output.unfold(ctx.kernel_height, ctx.kernel_width)

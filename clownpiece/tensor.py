@@ -451,6 +451,22 @@ class TensorBase:
       raise TypeError(f"Expected int for dim, got {type(dim).__name__}")
     var_impl = self._impl.var(dim, keepdims, unbiased)
     return self.__class__(var_impl)
+
+  def unfold(self, kernel_height: int, kernel_width: int):
+    if not isinstance(kernel_height, int):
+      raise TypeError(f"Expected int for kernel_height, got {type(kernel_height).__name__}")
+    if not isinstance(kernel_width, int):
+      raise TypeError(f"Expected int for kernel_wifth, got {type(kernel_width).__name__}")
+    unfold_impl = self._impl.unfold(kernel_height, kernel_width)
+    return self.__class__(unfold_impl)
+
+  def fold(self, output_shape: Union[tuple[int], List[int]], kernel_height: int, kernel_width: int):
+    if not isinstance(kernel_height, int):
+      raise TypeError(f"Expected int for kernel_height, got {type(kernel_height).__name__}")
+    if not isinstance(kernel_width, int):
+      raise TypeError(f"Expected int for kernel_wifth, got {type(kernel_width).__name__}")
+    fold_impl = self._impl.fold(output_shape, kernel_height, kernel_width)
+    return self.__class__(fold_impl)
   
 
 """
@@ -742,7 +758,14 @@ class Tensor(TensorBase):
   @tensor_op('var', 'Var')
   def var(self, dim: int, keepdims: bool = False, unbiased: bool = True, FunctionClass=None) -> "Tensor":
       return FunctionClass().apply(self, dim, keepdims, unbiased)
-      
+  
+  @tensor_op('unfold', 'Unfold')
+  def unfold(self, kernel_height: int, kernel_width: int, FunctionClass=None) -> "Tensor":
+      return FunctionClass().apply(self, kernel_height, kernel_width)
+
+  @tensor_op('fold', 'Fold')
+  def fold(self, output_shape: Union[tuple[int], List[int]], kernel_height: int, kernel_width: int, FunctionClass=None) -> "Tensor":
+        return FunctionClass().apply(self, output_shape, kernel_height, kernel_width)
   
   """
   STR

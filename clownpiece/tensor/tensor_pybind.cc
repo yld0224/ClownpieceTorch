@@ -422,6 +422,8 @@ PYBIND11_MODULE(tensor_impl, m) {
 
         .def("mean", &at::Tensor::mean, py::arg("dim"), py::arg("keepdims") = false, RELEASE_GIL, "Calculate the mean along a dimension")
         .def("var", &at::Tensor::var, py::arg("dim"), py::arg("keepdims") = false, py::arg("unbiased") = true, RELEASE_GIL, "Calculate the variance along a dimension")
+        .def("unfold", &at::Tensor::unfold, py::arg("kernel_height"), py::arg("kernel_width"), RELEASE_GIL, "Unfold the tensor for Conv2D")
+        .def("fold", &at::Tensor::fold, py::arg("output_shape"), py::arg("kernel_height"), py::arg("kernel_width"), RELEASE_GIL, "Fold patch columns into an image for Conv2D")
         ;
 
     /*** Part II: utils, clone, make contiguous and copy_ ***/

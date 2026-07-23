@@ -143,3 +143,34 @@ class MultiheadAttention(Module):
       output = output.transpose(-3, -2)
       output = output.reshape([batch_size, seq_len, self.hidden_dim])
       return self.out_proj(output)
+
+class Conv2D(Module):
+  def __init__(self, in_channels: int, out_channels: int, kernel_height: int, kernel_width: int, bias: bool = True):
+    super().__init__()
+    self.in_channels = in_channels
+    self.out_channels = out_channels
+    self.kernel_height = kernel_height
+    self.kernel_width = kernel_width
+    self.weight = Parameter(Tensor.zeros([out_channels, in_channels, kernel_height, kernel_width]))
+    fan_in = in_channels * kernel_height * kernel_width
+    bound = 1 / math.sqrt(fan_in)
+    init.uniform_(self.weight, -bound, bound)
+    if bias:
+      self.bias = Parameter(Tensor.zeros([out_channels]))
+      init.uniform_(self.bias, -bound, bound)
+    else:
+      self.register_parameter("bias", None)
+
+  def forward(self, x: Tensor):
+    N, C, H, W = x.shape
+    h = self.kernel_height
+    w = self.kernel_width
+    flattened_kernel_size = self.in_channels * h * w
+    columns = x.unfold(h, w)
+    weight_matrix = self.weight.reshape([self.out_channels, flattened_kernel_size])
+    out = columns @ weight_matrix.transpose(-1, -2)
+    if self.bias is not None:
+      out = out + self.bias
+    out = out.transpose(1, 2)
+    out = out.reshape([N, self.out_channels, H, W])
+    return out

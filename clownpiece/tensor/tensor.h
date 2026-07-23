@@ -245,6 +245,13 @@ class Tensor {
   */
   Tensor mean(int dim, bool keepdims=false) const;
   Tensor var(int dim, bool keepdims=false, bool unbiased=true) const;
+
+  /*
+    Week3 bonus
+  */
+  Tensor unfold(int kernal_height, int kernal_width) const;
+  Tensor fold(const std::vector<int>& output_shape, int kernel_height, int kernel_width) const;
+
 };
 
 

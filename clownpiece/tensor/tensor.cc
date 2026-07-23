@@ -1218,4 +1218,106 @@ namespace at {
     if (keepdims) {return t / n;}
     return (t / n).squeeze(dim);
   }
+
+  /*
+    Week3 bonus
+  */
+  Tensor Tensor::unfold(int kernel_height, int kernel_width) const {
+    if (shape_.size() != 4) {
+      throw std::invalid_argument("Unfold: expecting a 4D tensor with shape [N, C, H, W]");
+    }
+    if (kernel_height <= 0 || kernel_width <= 0) {
+      throw std::invalid_argument("Unfold: kernel size must be positive");
+    }
+    if (kernel_height % 2 == 0 || kernel_width % 2 == 0) {
+      throw std::invalid_argument("Unfold: padding='same' requires odd kernel sizes");
+    }
+
+    int padding_height = kernel_height / 2;
+    int padding_width = kernel_width / 2;
+    int N = shape_[0];
+    int C = shape_[1];
+    int H = shape_[2];
+    int W = shape_[3];
+    int output_height = H;
+    int output_width = W;
+    int window_count = output_height * output_width;
+    int window_size =  C * kernel_height * kernel_width;
+    std::vector<dtype> output_data(N * window_count * window_size, 0.0f);
+
+    for (int n = 0; n < N; ++n) {
+      for (int output_y = 0; output_y < output_height; ++output_y) {
+        for (int output_x = 0; output_x < output_width; ++output_x) {
+          int window_index = output_y * output_width + output_x;
+          for (int c = 0; c < C; ++c){
+            for (int kernel_y = 0; kernel_y < kernel_height; ++kernel_y) {
+              for (int kernel_x = 0; kernel_x < kernel_width; ++kernel_x) {
+                int input_y = output_y + kernel_y - padding_height;
+                int input_x = output_x + kernel_x - padding_width;
+                int element_index = c * kernel_height * kernel_width + kernel_y * kernel_width + kernel_x;
+                int output_offset = (n * window_count + window_index) * window_size + element_index;
+                if (input_y < 0 || input_y >= H || input_x < 0 || input_x >= W) {
+                  output_data[output_offset] = 0.0f;
+                } else {
+                  output_data[output_offset] = storage_[offset_atv({n,c,input_y,input_x})];
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    return Tensor({N, window_count, window_size}, output_data);
+  }
+  Tensor Tensor::fold(const std::vector<int>& output_shape, int kernel_height, int kernel_width) const {
+    if (shape_.size() != 3) {
+      throw std::invalid_argument("Fold: expecting a 3D tensor with shape [N, H*W, C*kH*kW]");
+    }
+    if (output_shape.size() != 4) {
+      throw std::invalid_argument("Fold: output_shape must be [N, C, H, W]");
+    }
+    if (kernel_height <= 0 || kernel_width <= 0) {
+      throw std::invalid_argument("Fold: kernel size must be positive");
+    }
+    if (kernel_height % 2 == 0 || kernel_width % 2 == 0) {
+      throw std::invalid_argument("Fold: padding='same' requires odd kernel sizes");
+    }
+
+    int N = output_shape[0];
+    int C = output_shape[1];
+    int H = output_shape[2];
+    int W = output_shape[3];
+    int padding_height = kernel_height / 2;
+    int padding_width = kernel_width / 2;
+    int output_height = H;
+    int output_width = W;
+    int window_count = output_height * output_width;
+    int window_size = C * kernel_height * kernel_width;
+    if (shape_[0] != N || shape_[1] != window_count || shape_[2] != window_size) {
+      throw std::invalid_argument("Fold: input shape does not match output_shape and kernel size");
+    }
+    std::vector<dtype> output_data(N * C * H * W, 0.0f);
+
+    for (int n = 0; n < N; ++n) {
+      for (int output_y = 0; output_y < output_height; ++output_y) {
+        for (int output_x = 0; output_x < output_width; ++output_x) {
+          int window_index = output_y * output_width + output_x;
+          for (int c = 0; c < C; ++c) {
+            for (int kernel_y = 0; kernel_y < kernel_height; ++kernel_y) {
+              for (int kernel_x = 0; kernel_x < kernel_width; ++kernel_x) {
+                int input_y = output_y + kernel_y - padding_height;
+                int input_x = output_x + kernel_x - padding_width;
+                if (input_y < 0 || input_y >= H || input_x < 0 || input_x >= W) {continue;}
+                int element_index = c * kernel_height * kernel_width + kernel_y * kernel_width + kernel_x;
+                dtype value = storage_[offset_atv({n,window_index,element_index})];
+                int output_offset =((n * C + c) * H + input_y) * W + input_x;
+                output_data[output_offset] += value;
+              }
+            }
+          }
+        }
+      }
+    }
+    return Tensor(output_shape, output_data);
+  }
 };
